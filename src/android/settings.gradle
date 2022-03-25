@@ -1,0 +1,6 @@
+rootProject.name = "Kidoz Plugin"
+include("app", "plugin")
+
+if (settings.hasProperty('coronaExpansionFileName')) {
+	include("preloadedAssets")
+}
