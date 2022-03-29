@@ -30,7 +30,7 @@
 // ----------------------------------------------------------------------------
 
 #define PLUGIN_NAME     "plugin.kidoz"    // Class plugin name
-#define PLUGIN_VERSION  "2.0"
+#define PLUGIN_VERSION  "2.1"
 
 static const char EVENT_NAME[]    = "adsRequest";
 static const char PROVIDER_NAME[] = "kidoz";

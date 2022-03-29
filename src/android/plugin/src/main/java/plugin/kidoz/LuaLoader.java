@@ -65,7 +65,7 @@ import com.kidoz.sdk.api.general.utils.ConstantDef;
 public class LuaLoader implements JavaFunction, CoronaRuntimeListener
 {
   private static final String PLUGIN_NAME        = "plugin.kidoz";
-  private static final String PLUGIN_VERSION     = "1.4.8";
+  private static final String PLUGIN_VERSION     = "2.1";
   private static final String PLUGIN_SDK_VERSION = KidozSDK.getSDKVersion();
 
   private static final String EVENT_NAME     = "adsRequest";

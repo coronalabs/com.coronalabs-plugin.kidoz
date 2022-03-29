@@ -19,8 +19,8 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-//    implementation 'org.greenrobot:eventbus:3.2.0'
-//    implementation 'net.kidoz.sdk:kidoz-android-native:8.9.5'
+    implementation 'org.greenrobot:eventbus:3.2.0'
+    implementation 'net.kidoz.sdk:kidoz-android-native:8.9.5'
 
     implementation ':Corona@aar'
 }
