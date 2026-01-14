@@ -6,9 +6,9 @@ local metadata =
 
 		-- This is the name without the 'lib' prefix.
 		-- In this case, the static library is called: libSTATIC_LIB_NAME.a
-		staticLibs = { "KidozPlugin", "KidozSDK" }, 
+		staticLibs = { "plugin_kidoz" }, 
 
-		frameworks = { "SystemConfiguration", "WebKit" },
+		frameworks = { "SystemConfiguration", "WebKit", "KidozSDK" },
 		frameworksOptional = {},
 	}
 }

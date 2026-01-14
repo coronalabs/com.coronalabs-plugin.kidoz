@@ -1,0 +1,250 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 6.0.3 effective-5.10 (swiftlang-6.0.3.1.10 clang-1600.0.30.1)
+// swift-module-flags: -target x86_64-apple-ios11.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -O -enable-bare-slash-regex -module-name KidozSDK
+// swift-module-flags-ignorable: -no-verify-emitted-module-interface
+import AVFAudio
+import CoreTelephony
+import CryptoKit
+import Foundation
+import JavaScriptCore
+@_exported import KidozSDK
+import StoreKit.SKStoreProductViewController
+import StoreKit
+import Swift
+import SystemConfiguration
+import UIKit
+import WebKit
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers @objc(KPBid) public class KPBid : ObjectiveC.NSObject {
+  public var id: Swift.String {
+    get
+  }
+  public var price: Swift.Double {
+    get
+  }
+  public var currency: Swift.String {
+    get
+  }
+  public var adType: Swift.String {
+    get
+  }
+  public init(bidResponse: Swift.String)
+  @objc deinit
+  @objc public func isExpired() -> Swift.Bool
+  @objc public func expirationDate() -> Foundation.Date?
+  public func confirmWin(nextHighestPrice: Swift.Double)
+  public func confirmLoss(winningPrice: Swift.Double, lossReason: Swift.Int)
+  @objc override dynamic public var description: Swift.String {
+    @objc get
+  }
+  public enum LostReason : Swift.Int, Swift.Codable {
+    case impressionOpportunityExpired
+    case missingBidPrice
+    case missingMinimumCreativeApprovalData
+    case bidBelowAuctionFloor
+    case bidBelowDealFloor
+    case lostToHigherBid
+    case lostToPMPBid
+    case buyerSeatBlocked
+    public init?(rawValue: Swift.Int)
+    public typealias RawValue = Swift.Int
+    public var rawValue: Swift.Int {
+      get
+    }
+  }
+}
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers @objc(KidozBid) public class KidozBid : KidozSDK.KPBid {
+  override public init(bidResponse: Swift.String)
+  @objc deinit
+}
+@objc @_hasMissingDesignatedInitializers public class KPError : ObjectiveC.NSObject, Swift.Error {
+  @objc override dynamic public var description: Swift.String {
+    @objc get
+  }
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers @objc(KidozRewardedAd) public class KidozRewardedAd : ObjectiveC.NSObject {
+  @objc public static func load(delegate: any KidozSDK.KidozRewardedDelegate)
+  @objc public static func load(bid: KidozSDK.KidozBid, delegate: any KidozSDK.KidozRewardedDelegate)
+  @objc public func show(viewController: UIKit.UIViewController)
+  @objc public func isLoaded() -> Swift.Bool
+  @objc public static func requestBid(delegate: any KidozSDK.KidozBidRequestDelegate)
+  @objc public static func getSignal() -> Swift.String?
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers final public class StringUtils {
+  public static func convertJSONStringToDictionary(json: Swift.String?) -> [Swift.String : Swift.AnyObject]?
+  @objc deinit
+}
+@objc public protocol SDKInitDelegate {
+  @objc func onInitSuccess()
+  @objc func onInitError(_ error: Swift.String)
+}
+@_hasMissingDesignatedInitializers @objc @_Concurrency.MainActor @preconcurrency public class KPBannerView : UIKit.UIView {
+  @_Concurrency.MainActor @preconcurrency @objc dynamic public init()
+  @objc @_Concurrency.MainActor @preconcurrency public func setAutoShow(to autoShow: Swift.Bool)
+  @objc @_Concurrency.MainActor @preconcurrency public func load()
+  @objc @_Concurrency.MainActor @preconcurrency public func load(_ bid: KidozSDK.KPBid)
+  @objc @_Concurrency.MainActor @preconcurrency public func show()
+  @objc @_Concurrency.MainActor @preconcurrency public func setBannerPosition(_ bannerPosition: KidozSDK.BannerPosition)
+  @objc @_Concurrency.MainActor @preconcurrency public func close()
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public var isHidden: Swift.Bool {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func didMoveToWindow()
+  @objc deinit
+}
+@objc public protocol KidozRewardedDelegate {
+  @objc func onRewardedAdLoaded(kidozRewardedAd: KidozSDK.KidozRewardedAd)
+  @objc func onRewardedAdFailedToLoad(kidozError: KidozSDK.KidozError)
+  @objc func onRewardedAdShown(kidozRewardedAd: KidozSDK.KidozRewardedAd)
+  @objc func onRewardedAdFailedToShow(kidozRewardedAd: KidozSDK.KidozRewardedAd, kidozError: KidozSDK.KidozError)
+  @objc func onRewardReceived(kidozRewardedAd: KidozSDK.KidozRewardedAd)
+  @objc func onRewardedImpression(kidozRewardedAd: KidozSDK.KidozRewardedAd)
+  @objc func onRewardedAdClosed(kidozRewardedAd: KidozSDK.KidozRewardedAd)
+}
+@objc public protocol KidozInitDelegate : KidozSDK.SDKInitDelegate {
+}
+@_hasMissingDesignatedInitializers @objc(KidozError) public class KidozError : ObjectiveC.NSObject, Swift.Error {
+  @objc public var errorCode: Swift.Int
+  @objc public var message: Swift.String
+  @objc override dynamic public var description: Swift.String {
+    @objc get
+  }
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers @objc(KidozBannerView) @_Concurrency.MainActor @preconcurrency public class KidozBannerView : KidozSDK.KPBannerView {
+  @objc @_Concurrency.MainActor @preconcurrency public var delegate: (any KidozSDK.KidozBannerDelegate)?
+  @objc @_Concurrency.MainActor @preconcurrency public func setDelegate(delegate: any KidozSDK.KidozBannerDelegate)
+  @objc @_Concurrency.MainActor @preconcurrency public static func requestBid(delegate: any KidozSDK.KidozBidRequestDelegate)
+  @objc @_Concurrency.MainActor @preconcurrency public static func getSignal() -> Swift.String?
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public init()
+  @objc deinit
+}
+@objc public enum BannerPosition : Swift.Int {
+  case top_center, bottom_center, top_left, top_right, bottom_left, bottom_right, none
+  public init?(rawValue: Swift.Int)
+  public typealias RawValue = Swift.Int
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+@_inheritsConvenienceInitializers @objc(TestUtils) public class TestUtils : ObjectiveC.NSObject {
+  public static let testBridge: KidozSDK.TestUtils.TestBridge
+  @dynamicMemberLookup public struct TestBridge {
+    public subscript(dynamicMember member: Swift.String) -> Any {
+      get
+    }
+  }
+  public enum Environment {
+    case production(sdk: KidozSDK.SDKType)
+    case qa(sdk: KidozSDK.SDKType)
+    case ext_qa(sdk: KidozSDK.SDKType)
+    case dev(sdk: KidozSDK.SDKType)
+    public static func allCases(sdk: KidozSDK.SDKType) -> [KidozSDK.TestUtils.Environment]
+    public var info: (label: Swift.String, envUrl: Swift.String, waterfallUrl: Swift.String, testWaterfallUrl: Swift.String) {
+      get
+    }
+  }
+  public static func getEnvironment(sdkString: Swift.String, environmentString: Swift.String) -> KidozSDK.TestUtils.Environment
+  public static func getSDKLabels() -> [Swift.String]
+  public static func getEnvLabels(sdk: KidozSDK.SDKType) -> [Swift.String]
+  public static func getCurrentSDKType() -> KidozSDK.SDKType
+  public static func setCurrentSDKType(sdk: KidozSDK.SDKType)
+  public static func isKidoz() -> Swift.Bool
+  @objc public static func getEnvApiUrl() -> Swift.String?
+  public static func setEnvApiUrl(apiUrl: Swift.String)
+  @objc public static func getOverrideWaterfallUrl() -> Swift.String?
+  public static func setOverrideWaterfallUrl(waterfallUrl: Swift.String?)
+  public static func getTestWaterfallUrl() -> Swift.String?
+  public static func setTestWaterfallUrl(waterfallUrl: Swift.String?)
+  public static func isRTBTestMode() -> Swift.Bool
+  public static func setRTBTestMode(isRTBTestMode: Swift.Bool)
+  @objc public static func setEnvironment(sdkTypeStr: Swift.String, environmentStr: Swift.String)
+  @objc public static func getBundleVersion() -> Swift.String
+  public static func setEnvironment(environment: KidozSDK.TestUtils.Environment)
+  @objc public static func setCampaignIds(campaignIds: Swift.String?)
+  @objc override dynamic public init()
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @objc final public class UIUtils : ObjectiveC.NSObject {
+  @objc public static func topViewController() -> UIKit.UIViewController
+  public static func visibleController() -> UIKit.UIViewController?
+  @objc override dynamic public init()
+  @objc deinit
+}
+@objc public protocol KidozInterstitialDelegate {
+  @objc func onInterstitialAdLoaded(kidozInterstitialAd: KidozSDK.KidozInterstitialAd)
+  @objc func onInterstitialAdFailedToLoad(kidozError: KidozSDK.KidozError)
+  @objc func onInterstitialAdShown(kidozInterstitialAd: KidozSDK.KidozInterstitialAd)
+  @objc func onInterstitialAdFailedToShow(kidozInterstitialAd: KidozSDK.KidozInterstitialAd, kidozError: KidozSDK.KidozError)
+  @objc func onInterstitialImpression(kidozInterstitialAd: KidozSDK.KidozInterstitialAd)
+  @objc func onInterstitialAdClosed(kidozInterstitialAd: KidozSDK.KidozInterstitialAd)
+}
+@objc public protocol KidozBidRequestDelegate {
+  @objc(onKidozBidResponse:) func onBidResponse(_ bid: KidozSDK.KidozBid)
+  @objc(onKidozError:) func onError(_ error: KidozSDK.KidozError)
+}
+@_inheritsConvenienceInitializers @objc(PlistUtil) public class PlistUtil : ObjectiveC.NSObject {
+  @objc override dynamic public init()
+  @objc deinit
+}
+public enum SDKType : Swift.String, Swift.CaseIterable {
+  case kidoz
+  case prado
+  public var info: (label: Swift.String, envUrl: Swift.String, analyticsUrl: Swift.String) {
+    get
+  }
+  public init?(rawValue: Swift.String)
+  public typealias AllCases = [KidozSDK.SDKType]
+  public typealias RawValue = Swift.String
+  nonisolated public static var allCases: [KidozSDK.SDKType] {
+    get
+  }
+  public var rawValue: Swift.String {
+    get
+  }
+}
+@objc public protocol KidozBannerDelegate {
+  @objc func onBannerAdLoaded(kidozBannerView: KidozSDK.KidozBannerView)
+  @objc func onBannerAdFailedToLoad(kidozBannerView: KidozSDK.KidozBannerView, error: KidozSDK.KidozError)
+  @objc func onBannerAdShown(kidozBannerView: KidozSDK.KidozBannerView)
+  @objc func onBannerAdFailedToShow(kidozBannerView: KidozSDK.KidozBannerView, error: KidozSDK.KidozError)
+  @objc func onBannerAdImpression(kidozBannerView: KidozSDK.KidozBannerView)
+  @objc func onBannerAdClosed(kidozBannerView: KidozSDK.KidozBannerView)
+}
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers @objc(Kidoz) public class Kidoz : ObjectiveC.NSObject {
+  @objc public static let instance: KidozSDK.Kidoz
+  @objc public func initialize(publisherID: Swift.String, securityToken: Swift.String, delegate: any KidozSDK.KidozInitDelegate)
+  @objc public static func suppressSKANWarnings()
+  @objc public static func getSdkVersion() -> Swift.String
+  @objc public func isSDKInitialized() -> Swift.Bool
+  @objc public static func setExtensionType(_ type: Swift.String, version: Swift.String)
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @objc final public class ToastMessage : ObjectiveC.NSObject {
+  @objc public static func show(message: Swift.String)
+  @objc override dynamic public init()
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers @objc(KidozInterstitialAd) public class KidozInterstitialAd : ObjectiveC.NSObject {
+  @objc public static func load(delegate: any KidozSDK.KidozInterstitialDelegate)
+  @objc public static func load(bid: KidozSDK.KidozBid, delegate: any KidozSDK.KidozInterstitialDelegate)
+  @objc public func show(viewController: UIKit.UIViewController)
+  @objc public func isLoaded() -> Swift.Bool
+  @objc public static func requestBid(delegate: any KidozSDK.KidozBidRequestDelegate)
+  @objc public static func getSignal() -> Swift.String?
+  @objc deinit
+}
+extension KidozSDK.KPBid.LostReason : Swift.Equatable {}
+extension KidozSDK.KPBid.LostReason : Swift.Hashable {}
+extension KidozSDK.KPBid.LostReason : Swift.RawRepresentable {}
+extension KidozSDK.BannerPosition : Swift.Equatable {}
+extension KidozSDK.BannerPosition : Swift.Hashable {}
+extension KidozSDK.BannerPosition : Swift.RawRepresentable {}
+extension KidozSDK.SDKType : Swift.Equatable {}
+extension KidozSDK.SDKType : Swift.Hashable {}
+extension KidozSDK.SDKType : Swift.RawRepresentable {}

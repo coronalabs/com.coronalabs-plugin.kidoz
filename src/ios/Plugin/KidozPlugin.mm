@@ -17,7 +17,27 @@
 
 // Kidoz
 #import "KidozPlugin.h"
-#import "KIDOZSDK.h"
+
+// Import the KidozSDK framework - this will automatically include Swift generated interfaces
+#import <KidozSDK/KidozSDK-Swift.h>
+
+// If @import doesn't work, use traditional import
+#ifndef __KidozSDK_h
+#import <KidozSDK/KidozSDK.h>
+#endif
+
+// Forward class declarations for better compile-time resolution
+@class Kidoz;
+@class KidozInterstitialAd;
+@class KidozRewardedAd;
+@class KidozBannerView;
+@class KidozError;
+
+// Forward protocol declarations
+@protocol KidozInitDelegate;
+@protocol KidozInterstitialDelegate;
+@protocol KidozRewardedDelegate;
+@protocol KidozBannerDelegate;
 
 // some macros to make life easier, and code more readable
 #define UTF8StringWithFormat(format, ...) [[NSString stringWithFormat:format, ##__VA_ARGS__] UTF8String]
@@ -30,7 +50,7 @@
 // ----------------------------------------------------------------------------
 
 #define PLUGIN_NAME     "plugin.kidoz"    // Class plugin name
-#define PLUGIN_VERSION  "2.1"
+#define PLUGIN_VERSION  "3.0"
 
 static const char EVENT_NAME[]    = "adsRequest";
 static const char PROVIDER_NAME[] = "kidoz";
@@ -82,14 +102,16 @@ static const NSArray *unsupportedAdTypes = @[
 // key/value dictionary for ad objects (panel, feed etc)
 static NSMutableDictionary *kidozObjects;
 
+// Store actual ad instances
+static KidozInterstitialAd *currentInterstitialAd = nil;
+static KidozRewardedAd *currentRewardedAd = nil;
+static KidozBannerView *currentBannerView = nil;
+
 // class for holding ad instance info for kidozObjects
 @interface KidozAdInfo: NSObject
 
 @property (nonatomic, retain) NSString *adInstance;     // ad object
 @property (nonatomic, assign) bool isLoaded;            // true when the ad object has loaded an ad
-@property (nonatomic, assign) bool hasUIElement;        // true when ad object has a button or handle
-@property (nonatomic, assign) bool isHiddenBySystem;    // true if force-hidden by 'ready' event
-@property (nonatomic, assign) BANNER_POSITION bannerPositionToLoad;
 
 - (instancetype)initWithAd:(NSString *)adInstance;
 
@@ -108,16 +130,16 @@ static NSMutableDictionary *kidozObjects;
 
 @end
 
-@interface KidozStandardDelegate: KidozDelegate <KDZInitDelegate>
+@interface KidozStandardDelegate: KidozDelegate <KidozInitDelegate>
 @end
 
-@interface KidozInterstitialDelegate: KidozDelegate <KDZInterstitialDelegate>
+@interface KidozInterstitialDelegate: KidozDelegate <KidozInterstitialDelegate>
 @end
 
-@interface KidozRewardedDelegate: KidozDelegate <KDZRewardedDelegate>
+@interface KidozRewardedDelegate: KidozDelegate <KidozRewardedDelegate>
 @end
 
-@interface KidozBannerDelegate: KidozDelegate <KDZBannerDelegate>
+@interface KidozBannerDelegate: KidozDelegate <KidozBannerDelegate>
 @end
 // ----------------------------------------------------------------------------
 
@@ -142,8 +164,8 @@ class KidozPlugin
     static int isLoaded(lua_State *L);
     static int show(lua_State *L);
     static int hide(lua_State *L);
-	static int isShowing(lua_State *L);
-	static int version(lua_State *L);
+    static int isShowing(lua_State *L);
+    static int version(lua_State *L);
 
   private: // internal helper functions
     static void logMsg(lua_State *L, NSString *msgType,  NSString *errorMsg);
@@ -154,9 +176,9 @@ class KidozPlugin
     UIViewController *coronaViewController;                 // application's view controller
     UIWindow *coronaWindow;                                 // application's UIWindow
     KidozStandardDelegate *kidozStandardDelegate;           // Kidoz's delegate
-    KidozInterstitialDelegate *kidozInterstitialDelegate;   // Kidoz's delegate for rewarded videos
+    KidozInterstitialDelegate *kidozInterstitialDelegate;   // Kidoz's delegate for interstitials
     KidozRewardedDelegate *kidozRewardedDelegate;           // Kidoz's delegate for rewarded videos
-	KidozBannerDelegate *kidozBannerDelegate;
+    KidozBannerDelegate *kidozBannerDelegate;               // Kidoz's delegate for banners
 };
 
 const char KidozPlugin::kName[] = PLUGIN_NAME;
@@ -253,19 +275,23 @@ KidozPlugin::Finalizer(lua_State *L)
     library->kidozStandardDelegate.coronaListener = NULL;
     library->kidozInterstitialDelegate.coronaListener = NULL;
     library->kidozRewardedDelegate.coronaListener = NULL;
-	library->kidozBannerDelegate.coronaListener = NULL;
+    library->kidozBannerDelegate.coronaListener = NULL;
 
     // release all ad objects
     [kidozObjects removeAllObjects];
     kidozObjects = nil;
+    
+    currentInterstitialAd = nil;
+    currentRewardedAd = nil;
+    currentBannerView = nil;
   
     library->kidozStandardDelegate = nil;
     library->kidozInterstitialDelegate = nil;
     library->kidozRewardedDelegate = nil;
-	library->kidozBannerDelegate = nil;
+    library->kidozBannerDelegate = nil;
 
     delete library;
-		
+        
     return 0;
 }
 
@@ -300,7 +326,7 @@ KidozPlugin::Initialize(void *platformContext)
     kidozStandardDelegate.coronaRuntime = runtime;
     kidozInterstitialDelegate.coronaRuntime = runtime;
     kidozRewardedDelegate.coronaRuntime = runtime;
-	kidozBannerDelegate.coronaRuntime = runtime;
+    kidozBannerDelegate.coronaRuntime = runtime;
 
     kidozObjects = [NSMutableDictionary new];
   }
@@ -343,7 +369,7 @@ KidozPlugin::init( lua_State *L )
     library.kidozStandardDelegate.coronaListener = CoronaLuaNewRef(L, 1);
     library.kidozInterstitialDelegate.coronaListener = library.kidozStandardDelegate.coronaListener;
     library.kidozRewardedDelegate.coronaListener = library.kidozStandardDelegate.coronaListener;
-	library.kidozBannerDelegate.coronaListener = library.kidozStandardDelegate.coronaListener;
+    library.kidozBannerDelegate.coronaListener = library.kidozStandardDelegate.coronaListener;
   }
   else {
     logMsg(L, ERROR_MSG, MsgFormat(@"listener expected, got: %s", luaL_typename(L, 1)));
@@ -396,8 +422,8 @@ KidozPlugin::init( lua_State *L )
     return 0;
   }
   
-  // initialize the Kidoz SDK
-    [[KidozSDK instance] initializeWithPublisherID:@(publisherID) securityToken:@(securityToken) withDelegate:library.kidozStandardDelegate];
+  // initialize the Kidoz SDK using new API
+  [Kidoz.instance initializeWithPublisherID:@(publisherID) securityToken:@(securityToken) delegate:library.kidozStandardDelegate];
   
   // log plugin version to console
   NSLog(@"%s: %s", PLUGIN_NAME, PLUGIN_VERSION);
@@ -479,71 +505,58 @@ KidozPlugin::load(lua_State *L)
     return 0;
   }
 
-  	BANNER_POSITION bannerPosition = BOTTOM_CENTER;
-	const struct {
-		BANNER_POSITION value;
-		const char *name;
-	} validBannerPositions[] = {
-		  {TOP_LEFT, "topLeft"}, {TOP_CENTER, "top"}, {TOP_RIGHT, "topRight"}
-		, {BOTTOM_LEFT, "bottomLeft"}, {BOTTOM_CENTER, "bottom"},{BOTTOM_RIGHT, "bottomRight"}
-		, {NONE, "none"}
-		, {NONE, NULL} // last entry should have name NULL
-	};
-	if(UTF8IsEqual(adType, ADTYPE_BANNER) && lua_istable(L, 2)) {
-		lua_getfield(L, 2, "adPosition");
-		const char* adPosition = lua_tostring(L, -1);
-		for (int i=0; adPosition && validBannerPositions[i].name; i++) {
-			if(UTF8IsEqual(validBannerPositions[i].name, adPosition)) {
-				bannerPosition = validBannerPositions[i].value;
-				break;
-			}
-		}
-		lua_pop(L, 1);
-	}
-	
-	
   // intersitital ------------------------------------------------------------------------------------------
   if (UTF8IsEqual(adType, ADTYPE_INTERSTITIAL)) {
-    if (kidozObjects[@(adType)] == nil) {
-        // create and load a new interstitial ad object and set its delegate
-        [[KidozSDK instance] initializeInterstitialWithDelegate:library.kidozInterstitialDelegate];
-        // add object to the dictionary for easy access
-        KidozAdInfo *adInfo = [[KidozAdInfo alloc] initWithAd:@(ADTYPE_INTERSTITIAL)];
-        kidozObjects[@(ADTYPE_INTERSTITIAL)] = adInfo;
+    if (![Kidoz.instance isSDKInitialized]) {
+      logMsg(L, ERROR_MSG, @"SDK not initialized");
+      return 0;
     }
-      // load an interstitial
-      else if([[KidozSDK instance]isInterstitialInitialized]){
-          [[KidozSDK instance]loadInterstitial];
-      }
+    
+    // Load using new static method
+    [KidozInterstitialAd loadWithDelegate:library.kidozInterstitialDelegate];
+    
+    // Create/update ad info
+    KidozAdInfo *adInfo = kidozObjects[@(ADTYPE_INTERSTITIAL)];
+    if (adInfo == nil) {
+      adInfo = [[KidozAdInfo alloc] initWithAd:@(ADTYPE_INTERSTITIAL)];
+      kidozObjects[@(ADTYPE_INTERSTITIAL)] = adInfo;
+    }
   }
   // rewarded video -----------------------------------------------------------------------------------------
   else if (UTF8IsEqual(adType, ADTYPE_REWARDEDVIDEO)) {
-      if (kidozObjects[@(adType)] == nil) {
-          // create and load a new interstitial ad object and set its delegate
-          [[KidozSDK instance] initializeRewardedWithDelegate:library.kidozRewardedDelegate];
-          // add object to the dictionary for easy access
-          KidozAdInfo *adInfo = [[KidozAdInfo alloc] initWithAd:@(ADTYPE_REWARDEDVIDEO)];
-          kidozObjects[@(ADTYPE_REWARDEDVIDEO)] = adInfo;
-      }
-
-      // load an interstitial
-      else if([[KidozSDK instance]isRewardedInitialized]){
-          [[KidozSDK instance]loadRewarded];
-      }
+    if (![Kidoz.instance isSDKInitialized]) {
+      logMsg(L, ERROR_MSG, @"SDK not initialized");
+      return 0;
+    }
     
-  }  else if (UTF8IsEqual(adType, ADTYPE_BANNER)) {
-	  KidozAdInfo *adInfo = kidozObjects[@(adType)];
-	  if (adInfo == nil) {
-		  // create and load a new interstitial ad object and set its delegate
-		  [[KidozSDK instance] initializeBannerWithDelegate:library.kidozBannerDelegate withViewController:library.coronaViewController];
-		  // add object to the dictionary for easy access
-		  adInfo = [[KidozAdInfo alloc] initWithAd:@(ADTYPE_BANNER)];
-		  kidozObjects[@(ADTYPE_BANNER)] = adInfo;
-	  } else if([[KidozSDK instance] isBannerInitialized]) {
-		  [[KidozSDK instance] setBannerPosition:bannerPosition];
-		  [[KidozSDK instance] loadBanner];
-	  }
-	  adInfo.bannerPositionToLoad = bannerPosition;
+    // Load using new static method
+    [KidozRewardedAd loadWithDelegate:library.kidozRewardedDelegate];
+    
+    // Create/update ad info
+    KidozAdInfo *adInfo = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
+    if (adInfo == nil) {
+      adInfo = [[KidozAdInfo alloc] initWithAd:@(ADTYPE_REWARDEDVIDEO)];
+      kidozObjects[@(ADTYPE_REWARDEDVIDEO)] = adInfo;
+    }
+  }
+  // banner -----------------------------------------------------------------------------------------
+  else if (UTF8IsEqual(adType, ADTYPE_BANNER)) {
+    if (![Kidoz.instance isSDKInitialized]) {
+      logMsg(L, ERROR_MSG, @"SDK not initialized");
+      return 0;
+    }
+    
+    // Create banner view if needed
+    if (currentBannerView == nil) {
+      currentBannerView = [[KidozBannerView alloc] init];
+      currentBannerView.delegate = library.kidozBannerDelegate;
+      
+      KidozAdInfo *adInfo = [[KidozAdInfo alloc] initWithAd:@(ADTYPE_BANNER)];
+      kidozObjects[@(ADTYPE_BANNER)] = adInfo;
+    }
+    
+    // Load banner
+    [currentBannerView load];
   }
   
   return 0;
@@ -600,15 +613,17 @@ KidozPlugin::isLoaded(lua_State *L)
 int
 KidozPlugin::isShowing(lua_State *L)
 {
-	lua_pushboolean(L, [[KidozSDK instance] isBannerShowing]);
-	return 1;
+  // For banner visibility check
+  bool isShowing = (currentBannerView != nil && currentBannerView.superview != nil);
+  lua_pushboolean(L, isShowing);
+  return 1;
 }
 
 int
 KidozPlugin::version(lua_State *L)
 {
-	lua_pushstring(L, [[[KidozSDK instance] getSdkVersion] UTF8String]);
-	return 1;
+  lua_pushstring(L, PLUGIN_VERSION);
+  return 1;
 }
 
 // [Lua] hide(adType [, options])
@@ -616,7 +631,6 @@ int
 KidozPlugin::hide(lua_State *L)
 {
   const char *adType = NULL;
-  bool forceClose = false;
   
   Self *context = ToLibrary(L);
   
@@ -649,34 +663,6 @@ KidozPlugin::hide(lua_State *L)
     return 0;
   }
   
-  // check for options table (optional)
-  if (! lua_isnoneornil(L, 2)) {
-    if (lua_type(L, 2) == LUA_TTABLE) {
-      // traverse and verify all options
-      for (lua_pushnil(L); lua_next(L, 2) != 0; lua_pop(L, 1)) {
-        const char *key = lua_tostring(L, -2);
-        
-        if (UTF8IsEqual(key, "close")) {
-          if (lua_type(L, -1) == LUA_TBOOLEAN) {
-            forceClose = lua_toboolean(L, -1);
-          }
-          else {
-            logMsg(L, ERROR_MSG, MsgFormat(@"options.close (boolean) expected, got: %s", luaL_typename(L, -1)));
-            return 0;
-          }
-        }
-        else {
-          logMsg(L, ERROR_MSG, MsgFormat(@"Invalid option '%s'", key));
-          return 0;
-        }
-      }
-    }
-    else {
-      logMsg(L, ERROR_MSG, MsgFormat(@"options table expected, got: %s", luaL_typename(L, 2)));
-      return 0;
-    }
-  }
-  
   // check to see if valid type
   if (! [validAdTypes containsObject:@(adType)]) {
     logMsg(L, ERROR_MSG, MsgFormat(@"Invalid adType: '%s'", adType));
@@ -689,21 +675,15 @@ KidozPlugin::hide(lua_State *L)
     return 0;
   }
   
-  // get saved ad object
-  KidozAdInfo *adObject = kidozObjects[@(adType)];
-  
-  // check if ad object has been loaded with kidoz.load()
-  if ((adObject == nil) || (! [adObject isLoaded])) {
-    logMsg(L, WARNING_MSG, MsgFormat(@"adType '%s' not loaded", adType));
+  // Only banners can be hidden
+  if (UTF8IsEqual(adType, ADTYPE_BANNER)) {
+    if (currentBannerView != nil) {
+      [currentBannerView close];
+    }
   }
   else {
     logMsg(L, WARNING_MSG, MsgFormat(@"adType '%s' cannot be hidden", adType));
   }
-	
-  if (UTF8IsEqual(adType, ADTYPE_BANNER)) {
-	  [[KidozSDK instance]hideBanner];
-  }
-
   
   return 0;
 }
@@ -765,23 +745,23 @@ KidozPlugin::show(lua_State *L)
     logMsg(L, WARNING_MSG, MsgFormat(@"adType '%s' not loaded", adType));
   }
   else {
-    // actions for interstitals
+    // actions for interstitials
     if (UTF8IsEqual(adType, ADTYPE_INTERSTITIAL)) {
-        if(([[KidozSDK instance]isInterstitialReady])){
-            [[KidozSDK instance]showInterstitial];
-        }
+      if (currentInterstitialAd != nil && [currentInterstitialAd isLoaded]) {
+        [currentInterstitialAd showWithViewController:library.coronaViewController];
+      }
     }
     // actions for rewarded video
     else if (UTF8IsEqual(adType, ADTYPE_REWARDEDVIDEO)) {
-        if(([[KidozSDK instance]isRewardedReady])){
-            [[KidozSDK instance]showRewarded];
-        }
+      if (currentRewardedAd != nil && [currentRewardedAd isLoaded]) {
+        [currentRewardedAd showWithViewController:library.coronaViewController];
+      }
     }
-	else if (UTF8IsEqual(adType, ADTYPE_BANNER)) {
-		if(([[KidozSDK instance]isBannerReady])){
-			[[KidozSDK instance]showBanner];
-		}
-	}
+    // banner is shown automatically after load
+    else if (UTF8IsEqual(adType, ADTYPE_BANNER)) {
+      // Banner shows automatically after load, this is a no-op
+      logMsg(L, WARNING_MSG, @"Banner is shown automatically after load");
+    }
   }
   
   return 0;
@@ -842,291 +822,248 @@ KidozPlugin::show(lua_State *L)
 
 @implementation KidozStandardDelegate
 
--(void)onInitSuccess{
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_INIT
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
+- (void)onInitSuccess {
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_INIT
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
--(void)onInitError:(NSString *)error{
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_INIT_FAILED,
-                                  @(CoronaEventIsErrorKey()) : @(true),
-								  @(CoronaEventResponseKey()) : error
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
+- (void)onInitError:(NSString *)error {
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_INIT_FAILED,
+    @(CoronaEventIsErrorKey()) : @(true),
+    @(CoronaEventResponseKey()) : error
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
 @end
 
 @implementation KidozInterstitialDelegate
 
--(void)interstitialDidInitialize{
-    if([[KidozSDK instance]isRewardedInitialized]){
-        [[KidozSDK instance]loadRewarded];
-    }
-}
-
--(void)interstitialDidClose{
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_CLOSED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL)
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
-}
-
--(void)interstitialDidOpen{
-    // ad has been used. reset loaded flag
-    KidozAdInfo *adObject = kidozObjects[@(ADTYPE_INTERSTITIAL)];
-    adObject.isLoaded = false;
-
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_DISPLAYED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL)
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
-}
-
--(void)interstitialIsReady{
-    // ad is ready. set loaded flag
-    KidozAdInfo *adObject = kidozObjects[@(ADTYPE_INTERSTITIAL)];
+- (void)onInterstitialAdLoadedWithKidozInterstitialAd:(KidozInterstitialAd *)kidozInterstitialAd {
+  // Store the loaded ad
+  currentInterstitialAd = kidozInterstitialAd;
+  
+  // Mark as loaded
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_INTERSTITIAL)];
+  if (adObject != nil) {
     adObject.isLoaded = true;
-
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_LOADED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL)
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
+  }
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_LOADED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL)
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
--(void)interstitialReturnedWithNoOffers{
-	KidozAdInfo *adObject = kidozObjects[@(ADTYPE_INTERSTITIAL)];
-	adObject.isLoaded = false;
-	
-	// create Corona event
-	NSDictionary *coronaEvent = @{
-								  @(CoronaEventPhaseKey()) : PHASE_FAILED,
-								  @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL),
-								  @(CoronaEventIsErrorKey()) : @(true),
-								  @(CoronaEventResponseKey()) : RESPONSE_LOAD_NO_FILL,
-								  };
-	[self dispatchLuaEvent:coronaEvent];
-}
-
--(void)interstitialDidPause{
-
-}
-
--(void)interstitialDidResume{
-
-}
-
--(void)interstitialDidReciveError:(NSString*)errorMessage{
-
-}
-
--(void)interstitialLoadFailed {
-    // reset loaded flag
-    KidozAdInfo *adObject = kidozObjects[@(ADTYPE_INTERSTITIAL)];
+- (void)onInterstitialAdFailedToLoadWithKidozError:(KidozError *)kidozError {
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_INTERSTITIAL)];
+  if (adObject != nil) {
     adObject.isLoaded = false;
-
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_FAILED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL),
-                                  @(CoronaEventIsErrorKey()) : @(true),
-                                  @(CoronaEventResponseKey()) : RESPONSE_LOAD_FAILED
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
+  }
+  
+  NSString *errorMsg = kidozError.message ?: RESPONSE_LOAD_FAILED;
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_FAILED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL),
+    @(CoronaEventIsErrorKey()) : @(true),
+    @(CoronaEventResponseKey()) : errorMsg
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
-- (void)interstitialLeftApplication {
+- (void)onInterstitialAdShownWithKidozInterstitialAd:(KidozInterstitialAd *)kidozInterstitialAd {
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_INTERSTITIAL)];
+  if (adObject != nil) {
+    adObject.isLoaded = false;
+  }
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_DISPLAYED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL)
+  };
+  [self dispatchLuaEvent:coronaEvent];
+}
+
+- (void)onInterstitialAdFailedToShowWithKidozInterstitialAd:(KidozInterstitialAd *)kidozInterstitialAd kidozError:(KidozError *)kidozError {
+  NSString *errorMsg = kidozError.message ?: @"Failed to show";
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_FAILED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL),
+    @(CoronaEventIsErrorKey()) : @(true),
+    @(CoronaEventResponseKey()) : errorMsg
+  };
+  [self dispatchLuaEvent:coronaEvent];
+}
+
+- (void)onInterstitialImpressionWithKidozInterstitialAd:(KidozInterstitialAd *)kidozInterstitialAd {
+  // Optional: dispatch impression event if needed
+}
+
+- (void)onInterstitialAdClosedWithKidozInterstitialAd:(KidozInterstitialAd *)kidozInterstitialAd {
+  currentInterstitialAd = nil;
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_CLOSED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_INTERSTITIAL)
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
 @end
 
 @implementation KidozRewardedDelegate
 
--(void)rewardedDidInitialize{
-    if([[KidozSDK instance]isRewardedInitialized]){
-        [[KidozSDK instance]loadRewarded];
-    }
-}
-
--(void)rewardedDidClose{
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_CLOSED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
-}
-
--(void)rewardedDidOpen{
-    // ad has been used. reset loaded flag
-    KidozAdInfo *adObject = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
-    adObject.isLoaded = false;
-
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_DISPLAYED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
-}
--(void)rewardedIsReady{
-    // ad is ready. set loaded flag
-    KidozAdInfo *adObject = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
+- (void)onRewardedAdLoadedWithKidozRewardedAd:(KidozRewardedAd *)kidozRewardedAd {
+  // Store the loaded ad
+  currentRewardedAd = kidozRewardedAd;
+  
+  // Mark as loaded
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
+  if (adObject != nil) {
     adObject.isLoaded = true;
-
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_LOADED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
-
-}
--(void)rewardedReturnedWithNoOffers{
-	KidozAdInfo *adObject = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
-	adObject.isLoaded = false;
-	
-	// create Corona event
-	NSDictionary *coronaEvent = @{
-								  @(CoronaEventPhaseKey()) : PHASE_FAILED,
-								  @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO),
-								  @(CoronaEventIsErrorKey()) : @(true),
-								  @(CoronaEventResponseKey()) : RESPONSE_LOAD_NO_FILL,
-								  };
-	[self dispatchLuaEvent:coronaEvent];
+  }
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_LOADED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
--(void)rewardedDidPause{
-}
-
--(void)rewardedDidResume{
-}
-
--(void)rewardedDidReciveError:(NSString*)errorMessage{
-
-}
-
--(void)rewardReceived{
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_REWARD,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
-}
-
--(void)rewardedStarted{
-}
-
-- (void)rewardedLoadFailed {
-    // reset loaded flag
-    KidozAdInfo *adObject = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
+- (void)onRewardedAdFailedToLoadWithKidozError:(KidozError *)kidozError {
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
+  if (adObject != nil) {
     adObject.isLoaded = false;
-
-    // create Corona event
-    NSDictionary *coronaEvent = @{
-                                  @(CoronaEventPhaseKey()) : PHASE_FAILED,
-                                  @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO),
-                                  @(CoronaEventIsErrorKey()) : @(true),
-                                  @(CoronaEventResponseKey()) : RESPONSE_LOAD_FAILED
-                                  };
-    [self dispatchLuaEvent:coronaEvent];
+  }
+  
+  NSString *errorMsg = kidozError.message ?: RESPONSE_LOAD_FAILED;
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_FAILED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO),
+    @(CoronaEventIsErrorKey()) : @(true),
+    @(CoronaEventResponseKey()) : errorMsg
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
-- (void)rewardedLeftApplication {
+- (void)onRewardedAdShownWithKidozRewardedAd:(KidozRewardedAd *)kidozRewardedAd {
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_REWARDEDVIDEO)];
+  if (adObject != nil) {
+    adObject.isLoaded = false;
+  }
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_DISPLAYED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
+  };
+  [self dispatchLuaEvent:coronaEvent];
+}
+
+- (void)onRewardedAdFailedToShowWithKidozRewardedAd:(KidozRewardedAd *)kidozRewardedAd kidozError:(KidozError *)kidozError {
+  NSString *errorMsg = kidozError.message ?: @"Failed to show";
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_FAILED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO),
+    @(CoronaEventIsErrorKey()) : @(true),
+    @(CoronaEventResponseKey()) : errorMsg
+  };
+  [self dispatchLuaEvent:coronaEvent];
+}
+
+- (void)onRewardReceivedWithKidozRewardedAd:(KidozRewardedAd *)kidozRewardedAd {
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_REWARD,
+    @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
+  };
+  [self dispatchLuaEvent:coronaEvent];
+}
+
+- (void)onRewardedImpressionWithKidozRewardedAd:(KidozRewardedAd *)kidozRewardedAd {
+  // Optional: dispatch impression event if needed
+}
+
+- (void)onRewardedAdClosedWithKidozRewardedAd:(KidozRewardedAd *)kidozRewardedAd {
+  currentRewardedAd = nil;
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_CLOSED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_REWARDEDVIDEO)
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
 @end
 
 @implementation KidozBannerDelegate
 
-- (void)bannerDidClose {
-	NSDictionary *coronaEvent = @{
-								  @(CoronaEventPhaseKey()) : PHASE_CLOSED,
-								  @(CoronaEventTypeKey()) : @(ADTYPE_BANNER)
-								  };
-	[self dispatchLuaEvent:coronaEvent];
+- (void)onBannerAdLoadedWithKidozBannerView:(KidozBannerView *)kidozBannerView {
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_BANNER)];
+  if (adObject != nil) {
+    adObject.isLoaded = true;
+  }
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_LOADED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_BANNER)
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
-- (void)bannerDidInitialize {
-	KidozAdInfo *adObject = kidozObjects[@(ADTYPE_BANNER)];
-	[[KidozSDK instance] setBannerPosition:adObject.bannerPositionToLoad];
-	[[KidozSDK instance] loadBanner];
+- (void)onBannerAdFailedToLoadWithKidozBannerView:(KidozBannerView *)kidozBannerView error:(KidozError *)error {
+  KidozAdInfo *adObject = kidozObjects[@(ADTYPE_BANNER)];
+  if (adObject != nil) {
+    adObject.isLoaded = false;
+  }
+  
+  NSString *errorMsg = error.message ?: RESPONSE_LOAD_FAILED;
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_FAILED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_BANNER),
+    @(CoronaEventIsErrorKey()) : @(true),
+    @(CoronaEventResponseKey()) : errorMsg
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
-- (void)bannerDidOpen {
-	KidozAdInfo *adObject = kidozObjects[@(ADTYPE_BANNER)];
-	adObject.isLoaded = false;
-	
-	// create Corona event
-	NSDictionary *coronaEvent = @{
-								  @(CoronaEventPhaseKey()) : PHASE_DISPLAYED,
-								  @(CoronaEventTypeKey()) : @(ADTYPE_BANNER)
-								  };
-	[self dispatchLuaEvent:coronaEvent];
-
+- (void)onBannerAdShownWithKidozBannerView:(KidozBannerView *)kidozBannerView {
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_DISPLAYED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_BANNER)
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
-- (void)bannerDidReciveError:(NSString *)errorMessage {
-
+- (void)onBannerAdFailedToShowWithKidozBannerView:(KidozBannerView *)kidozBannerView error:(KidozError *)error {
+  NSString *errorMsg = error.message ?: @"Failed to show";
+  
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_FAILED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_BANNER),
+    @(CoronaEventIsErrorKey()) : @(true),
+    @(CoronaEventResponseKey()) : errorMsg
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
-- (void)bannerIsReady {
-	KidozAdInfo *adObject = kidozObjects[@(ADTYPE_BANNER)];
-	adObject.isLoaded = true;
-	
-	// create Corona event
-	NSDictionary *coronaEvent = @{
-								  @(CoronaEventPhaseKey()) : PHASE_LOADED,
-								  @(CoronaEventTypeKey()) : @(ADTYPE_BANNER)
-								  };
-	[self dispatchLuaEvent:coronaEvent];
-
+- (void)onBannerAdImpressionWithKidozBannerView:(KidozBannerView *)kidozBannerView {
+  // Optional: dispatch impression event if needed
 }
 
-- (void)bannerLeftApplication {
-
-}
-
-- (void)bannerLoadFailed {
-	KidozAdInfo *adObject = kidozObjects[@(ADTYPE_BANNER)];
-	adObject.isLoaded = false;
-	
-	// create Corona event
-	NSDictionary *coronaEvent = @{
-								  @(CoronaEventPhaseKey()) : PHASE_FAILED,
-								  @(CoronaEventTypeKey()) : @(ADTYPE_BANNER),
-								  @(CoronaEventIsErrorKey()) : @(true),
-								  @(CoronaEventResponseKey()) : RESPONSE_LOAD_FAILED
-								  };
-	[self dispatchLuaEvent:coronaEvent];
-
-}
-
-- (void)bannerReturnedWithNoOffers {
-	KidozAdInfo *adObject = kidozObjects[@(ADTYPE_BANNER)];
-	adObject.isLoaded = false;
-	
-	// create Corona event
-	NSDictionary *coronaEvent = @{
-								  @(CoronaEventPhaseKey()) : PHASE_FAILED,
-								  @(CoronaEventTypeKey()) : @(ADTYPE_BANNER),
-								  @(CoronaEventIsErrorKey()) : @(true),
-								  @(CoronaEventResponseKey()) : RESPONSE_LOAD_NO_FILL,
-								  };
-	[self dispatchLuaEvent:coronaEvent];
-
+- (void)onBannerAdClosedWithKidozBannerView:(KidozBannerView *)kidozBannerView {
+  NSDictionary *coronaEvent = @{
+    @(CoronaEventPhaseKey()) : PHASE_CLOSED,
+    @(CoronaEventTypeKey()) : @(ADTYPE_BANNER)
+  };
+  [self dispatchLuaEvent:coronaEvent];
 }
 
 @end
@@ -1145,8 +1082,6 @@ KidozPlugin::show(lua_State *L)
   if (self = [super init]) {
     self.adInstance = adInstance;
     self.isLoaded = false;
-    self.hasUIElement = false;
-    self.isHiddenBySystem = false;
   }
   
   return self;
