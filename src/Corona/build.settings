@@ -19,6 +19,11 @@ settings =
 		plist =
 		{
 			UILaunchStoryboardName = "LaunchScreen",
+			SKAdNetworkItems = {
+                {
+                    SKAdNetworkIdentifier = "v79kvwwj4g.skadnetwork",
+                },
+            },
 		},
 	},
 	plugins =
